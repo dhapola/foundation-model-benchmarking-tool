@@ -1,9 +1,16 @@
 __pycache__/
+analytics/comparison.json
+site
 *.zip
 *.zip
+*.env
 e.json
 .DS_Store
 .locks/*
+website/nginx.conf
+website/mkdocs.yml
+website/.htpasswd
+website/ssl
 ./scripts/model.tar.gz
 /data/models/*/endpoints.json
 **/metrics/*/per_chunk/*
@@ -36,3 +43,4 @@ Llama2-7b-g4dn-SageMaker/
 Llama2-7b-g4dn-g5-SageMaker/
 llama2-70b-g5-inf2-tgi-v1-SageMaker/
 results-*/
+analytics/results/

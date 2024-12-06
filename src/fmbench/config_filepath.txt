@@ -1,1 +1,1 @@
-configs/config-bedrock-claude.yml
+configs/multimodal/bedrock/config-llama-3-2-11b-vision-instruct-scienceqa.yml

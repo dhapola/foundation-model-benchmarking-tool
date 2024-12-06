@@ -5,6 +5,9 @@ import time
 import boto3
 import logging
 import requests
+import pandas as pd
+from datetime import datetime
+from fmbench.scripts import constants
 from fmbench.utils import count_tokens
 from typing import Dict, Optional, List
 from fmbench.scripts.fmbench_predictor import (FMBenchPredictor,
@@ -18,7 +21,8 @@ class RESTPredictor(FMBenchPredictor):
     # overriding abstract method
     def __init__(self,
                  endpoint_name: str,
-                 inference_spec: Optional[Dict]):
+                 inference_spec: Optional[Dict],
+                 metadata: Optional[Dict]):
         try:
             self._endpoint_name: str = endpoint_name
             self._inference_spec: Dict = inference_spec 
@@ -31,6 +35,9 @@ class RESTPredictor(FMBenchPredictor):
         response_json: Optional[Dict] = None
         response: Optional[str] = None
         latency: Optional[float] = None
+        TTFT: Optional[float] = None
+        TPOT: Optional[float] = None
+        TTLT: Optional[float] = None
         prompt_tokens: Optional[int] = None
         completion_tokens: Optional[int] = None
         timeout: Optional[int] = None
@@ -78,6 +85,9 @@ class RESTPredictor(FMBenchPredictor):
                          f"from predictor={self._endpoint_name}, response={response}, exception={e}")
         return FMBenchPredictionResponse(response_json=response_json,
                                          latency=latency,
+                                         time_to_first_token=TTFT,
+                                         time_per_output_token=TPOT,
+                                         time_to_last_token=TTLT,
                                          completion_tokens=completion_tokens,
                                          prompt_tokens=prompt_tokens)
 
@@ -91,6 +101,7 @@ class RESTPredictor(FMBenchPredictor):
     # modify this function.
     def calculate_cost(self,
                        instance_type: str,
+                       instance_count: int,
                        pricing: Dict,
                        duration: float,
                        prompt_tokens: int,
@@ -100,17 +111,36 @@ class RESTPredictor(FMBenchPredictor):
         try:
             instance_based_pricing = pricing['pricing']['instance_based']
             hourly_rate = instance_based_pricing.get(instance_type, None)
-            logger.info(f"the hourly rate for running on {instance_type} is {hourly_rate}")
+            logger.info(f"the hourly rate for running on {instance_type} is {hourly_rate}, instance_count={instance_count}")
             # calculating the experiment cost for instance based pricing
-            experiment_cost = (hourly_rate / 3600) * duration
+            instance_count = instance_count if instance_count else 1
+            experiment_cost = (hourly_rate / 3600) * duration * instance_count
         except Exception as e:
             logger.error(f"exception occurred during experiment cost calculation, exception={e}")
         return experiment_cost
+    
+    def get_metrics(self,
+                    start_time: datetime,
+                    end_time: datetime,
+                    period: int = 60) -> pd.DataFrame:
+        # not implemented
+        return None
 
+    def shutdown(self) -> None:
+        """Represents the function to shutdown the predictor
+           cleanup the endpooint/container/other resources
+        """
+        return None
+    
     @property
     def inference_parameters(self) -> Dict:
         """The inference parameters property."""
         return self._inference_spec.get("parameters")
 
-def create_predictor(endpoint_name: str, inference_spec: Optional[Dict]):
-    return RESTPredictor(endpoint_name, inference_spec)
+    @property
+    def platform_type(self) -> Dict:
+        """The inference parameters property."""
+        return constants.PLATFORM_EXTERNAL
+    
+def create_predictor(endpoint_name: str, inference_spec: Optional[Dict], metadata: Optional[Dict]):
+    return RESTPredictor(endpoint_name, inference_spec, metadata)

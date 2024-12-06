@@ -76,9 +76,21 @@ def run_notebooks(config_file: str) -> None:
     if not output_directory.exists():
         output_directory.mkdir()
 
+    all_notebooks = list(current_directory.glob('*.ipynb'))
+    logger.info(f"Steps to be executed: {all_notebooks}")
+
     for step, execute in config['run_steps'].items():
         if execute:
             notebook_path = current_directory / step
+
+            if not notebook_path.exists():
+                matching_notebooks = [nb for nb in all_notebooks if nb.name[1:] == step[1:]]
+                if matching_notebooks:
+                    notebook_path = matching_notebooks[0]
+                else:
+                    logging.error(f"No matching notebook found for step: {step}")
+                    continue
+
             logging.info(f"Current step file --> {notebook_path.stem}")
 
             timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
@@ -109,15 +121,28 @@ def run_notebooks(config_file: str) -> None:
         else:
             logging.info(f"Skipping {step} as it is not marked for execution")
 
-    logger.info(f"FMBench has completed the benchmarking process. Check S3 bucket \"{config['aws']['bucket']}\" for results")
+    logger.info(f"FMBench has completed the benchmarking process. Check the \"results-*\" folder for results")
 
 
 # main function to run all of the fmbench process through a single command via this python package
 def main():
     parser = argparse.ArgumentParser(description='Run FMBench with a specified config file.')
     parser.add_argument('--config-file', type=str, help='The S3 URI of your Config File', required=True)
+    role_help = 'The ARN of the role to be used for FMBench. If an \
+                 Amazon SageMaker endpoint is being deployed \
+                 through FMBench then this role would also be used \
+                 by that endpoint'
+    parser.add_argument('--role-arn', type=str, default=None, required=False, help=role_help)
+    # add an option to run FMBench local mode. If local mode is set to yes, then FMBench uses read and write data locally and if no, 
+    # then the test will continue to interact with S3
+    parser.add_argument('--local-mode', type=str, default=None, choices=['yes', 'no'], help='Specify if running in local mode or not. Options: yes, no. Default is no.')
+    # add an option to run FMBench with a custom tmp file argument. Users if running in local mode can configure a custom tmp file 
+    # instead of using the default /tmp directory
+    parser.add_argument('--tmp-dir', type=str, default=None, required=False, help='An optional tmp directory if fmbench is running in local mode.')
+    parser.add_argument('--write-bucket', type=str, help='Write bucket that is used for sagemaker endpoints in local mode and storing metrics in s3 mode.')
+
     args = parser.parse_args()
-    print(f"{args} = args")
+    print(f"main, {args} = args")
 
     # Set the environment variable based on the parsed argument
     os.environ["CONFIG_FILE_FMBENCH"] = args.config_file
@@ -125,6 +150,33 @@ def main():
     
     # set env var to indicate that fmbench is being run from main and not interactively via a notebook
     os.environ["INTERACTIVE_MODE_SET"] = "no"
+
+    # set the environment variable for the local mode option
+    if args.local_mode:
+        print(f"setting the LOCAL_MODE to {args.local_mode}")
+        os.environ["LOCAL_MODE"] = args.local_mode
+        if args.local_mode == "yes":
+            if args.write_bucket is None:
+                logger.error("Write bucket is not provided when local mode is set to 'yes'")
+                sys.exit(1)
+            else:
+                # set the environment variable for the write bucket name to be configured and used for sagemaker endpoints and 
+                # metrics stored in s3 mode with local mode is set to "yes" by the user
+                os.environ["WRITE_BUCKET"] = args.write_bucket
+                logger.info(f"Write bucket specified in local mode: {args.write_bucket}")
+            if args.tmp_dir:
+                os.environ["TMP_DIR"] = args.tmp_dir
+                logger.info(f"tmp directory specified in local mode: {args.tmp_dir}")
+            else:
+                logger.info(f"Custom tmp file not provided.")
+
+
+    # if a role arn is specified then set it as an env var so that the rest of the code
+    # can use it. This will then be used to set the templatized "sagemaker_execution_role"
+    # parameter in the config file
+    if args.role_arn:
+        print(f"setting FMBENCH_ROLE_ARN env variable to {args.role_arn}")
+        os.environ['FMBENCH_ROLE_ARN'] = args.role_arn
 
     # Proceed with the rest of your script's logic, passing the config file as needed
     run_notebooks(args.config_file)    
